@@ -2,6 +2,20 @@ import chainer
 import chainer.functions as F
 import chainer.links as L
 
+"""
+class Decoder(chainer.Chain):
+    def __init__(self, n):
+        self.n = n
+        super().__init__(
+            fc1=L.Linear(None, 8*8*n),
+
+            )
+
+    def __call__(self, z):
+        h = self.fc1(z)
+        h = F.reshape((8, 8, self.n))
+"""
+
 class GeneratorCIFAR(chainer.Chain):
 
     def __init__(self, size=None):
@@ -62,9 +76,33 @@ class Discriminator(chainer.Chain):
         )
         
     def __call__(self, x, test=False):
+        #print(x.shape)
         h = F.leaky_relu(self.c0(x))   
         h = F.leaky_relu(self.bn1(self.c1(h), test=test))
         h = F.leaky_relu(self.bn2(self.c2(h), test=test))
         h = F.leaky_relu(self.bn3(self.c3(h), test=test))
         l = self.l4l(h)
+        #print(l.shape)
+        l = F.sum(l) / l.size
+        #print(l.data, l.shape)
         return l
+
+class Critic(chainer.Chain):
+    def __init__(self):
+            super().__init__(
+                c0=L.Convolution2D(None, 64, 4, stride=2, pad=1, nobias=True),
+                c1=L.Convolution2D(64, 128, 4, stride=2, pad=1, nobias=True),
+                c2=L.Convolution2D(128, 256, 4, stride=2, pad=1, nobias=True),
+                c3=L.Convolution2D(256, 1, 4, stride=1, pad=0, nobias=True),
+                bn_c1=L.BatchNormalization(128),
+                bn_c2=L.BatchNormalization(256)
+            )
+
+    def __call__(self, x, test=False):
+       
+        h = F.leaky_relu(self.c0(x))
+        h = F.leaky_relu(self.bn_c1(self.c1(h), test=test))
+        h = F.leaky_relu(self.bn_c2(self.c2(h), test=test))
+        h = self.c3(h)
+        h = F.sum(h) / h.size  # Mean
+        return h

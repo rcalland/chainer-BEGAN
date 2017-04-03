@@ -1,5 +1,5 @@
-# chainer-LSGAN
-An implementation of [_Mao et al., "Least Squares Generative Adversarial Networks" 2017_](https://arxiv.org/abs/1611.04076) using the [Chainer framework](http://chainer.org/). 
+# chainer-BEGAN
+An implementation of [_Berthelot et al., "BEGAN: Boundary Equilibrium Generative Adversarial Networks" 2017_](https://arxiv.org/abs/1703.10717) using the [Chainer framework](http://chainer.org/). 
 
 Disclaimer: PFN provides no warranty or support for this implementation. Use it at your own risk. See [license](LICENSE.md) for details.
 

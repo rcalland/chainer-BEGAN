@@ -14,7 +14,7 @@ import chainer
 from chainer import cuda, Variable
 import chainer.functions as F
 
-from models import Discriminator, GeneratorMNIST, GeneratorCIFAR
+from models import Critic, GeneratorMNIST, GeneratorCIFAR
 from iterators import RandomNoiseIterator, GaussianNoiseGenerator, UniformNoiseGenerator
 
 def get_batch(iter, device_id):
@@ -62,7 +62,8 @@ def print_sample(name, noise_samples, opt_generator):
     save_ims(name, generated.data)
     print("    Saved image to {}".format(name))
 
-def training_step(args, train_iter, test_iter, noise_iter, opt_generator, opt_discriminator):
+def training_step(args, train_iter, test_iter, noise_iter, opt_generator, opt_discriminator, kt):
+    kt.unchain_backward()
 
     noise_samples = get_batch(noise_iter, args.device_id)
 
@@ -76,30 +77,36 @@ def training_step(args, train_iter, test_iter, noise_iter, opt_generator, opt_di
     Dreal = opt_discriminator.target(train_samples)
     Dgen = opt_discriminator.target(generated)
 
-    Dloss = 0.5 * (F.sum((Dreal - 1.0)**2) + F.sum(Dgen**2)) / args.batchsize
+    Dloss = Dreal - kt * Dgen
     update_model(opt_discriminator, Dloss)
 
     # update the generator
     noise_samples = get_batch(noise_iter, args.device_id)
     generated = opt_generator.target(noise_samples)
-    Gloss = 0.5 * F.sum((opt_discriminator.target(generated) - 1.0)**2) / args.batchsize
+    Gloss = opt_discriminator.target(generated)
     update_model(opt_generator, Gloss)
+
+    kt = F.clip(kt, 0.0, 1.0)
+    kt += args.lambda_k * (args.gamma * Dreal - Gloss)
 
     if train_iter.is_new_epoch:
         print("[{}] Discriminator loss: {} Generator loss: {}".format(train_iter.epoch, Dloss.data, Gloss.data))
         print_sample(os.path.join(args.output, "epoch_{}.png".format(train_iter.epoch)), noise_samples, opt_generator)
+
+    return kt
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device_id', '-g', type=int, default=-1)
     parser.add_argument('--num_epochs', '-n', type=int, default=100)
     parser.add_argument('--batchsize', '-b', type=int, default=64)
-    parser.add_argument('--num_z', '-z', type=int, default=1024)
+    parser.add_argument('--num_z', '-z', type=int, default=128)
     parser.add_argument('--learning_rate', '-lr', type=float, default=0.001)
     parser.add_argument('--output', '-o', type=str, default="output")
     parser.add_argument('--mnist', '-m', action="store_true")
+    parser.add_argument('--gamma', '-gm', type=float, default=0.01)
+    parser.add_argument('--lambda_k', '-l', type=float, default=0.001)
     return parser.parse_args()
-
 
 def main(args):
 
@@ -129,15 +136,19 @@ def main(args):
     opt_discriminator = chainer.optimizers.RMSprop(lr=args.learning_rate)
 
     opt_generator.setup(generator)
-    opt_discriminator.setup(Discriminator())
+    opt_discriminator.setup(Critic()) 
 
     # make a random noise iterator (uniform noise between -1 and 1)
     noise_iter = RandomNoiseIterator(UniformNoiseGenerator(-1, 1, args.num_z), args.batchsize)
+
+    # make variable kt
+    kt = Variable(np.array(0.0, np.float32))
 
     # send to GPU
     if args.device_id >= 0:
         opt_generator.target.to_gpu()
         opt_discriminator.target.to_gpu()
+        kt.to_gpu() 
 
     # make the output folder
     if not os.path.exists(args.output):
@@ -146,7 +157,7 @@ def main(args):
     print("Starting training loop...")
     
     while train_iter.epoch < args.num_epochs:
-        training_step(args, train_iter, test_iter, noise_iter, opt_generator, opt_discriminator)
+        kt = training_step(args, train_iter, test_iter, noise_iter, opt_generator, opt_discriminator, kt)
     
     print("Finished training.")
 
